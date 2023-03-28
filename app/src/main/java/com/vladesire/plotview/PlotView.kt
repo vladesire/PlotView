@@ -71,6 +71,7 @@ class PlotView(
     private var tfMid: PointF? = null
     private var tfLength: Float? = null
     private var tfVector: PointF? = null
+    private var vecDirection = 1f
 
     private var secondFingerId: Int? = null
 
@@ -130,7 +131,6 @@ class PlotView(
 //        canvas.drawPoints(generatePoints(10000, -width/4f, width/4f, width/2f, height/2f, spline1), splinePaint)
 
     }
-
     override fun onTouchEvent(event: MotionEvent): Boolean {
 
         // Finger 1 position
@@ -147,8 +147,15 @@ class PlotView(
 
                     val pos2 = PointF(event.getX(index), event.getY(index))
 
+
                     prevOffset = offset
-                    tfVector = pos2 - pos1
+                    // Normalize (direction)
+                    tfVector = (pos2 - pos1).also {
+                        vecDirection = if (it.x < 0) -1f else 1f
+
+                        it *= vecDirection
+                    }
+
                     tfMid = (pos1+pos2)/2f
                     rotationCenter = tfMid!!
                     tfLength = tfVector?.length()
@@ -191,12 +198,18 @@ class PlotView(
                     val index = event.findPointerIndex(id)
                     val pos2 = PointF(event.getX(index), event.getY(index))
 
-                    val curTfVector = pos2 - pos1
+                    // Normalize vectors (only direction) (to compensate in which order you press fingers)
+                    val curTfVector = (pos2 - pos1) * vecDirection
                     val curTfLength = curTfVector.length()
                     val curTfMid = (pos1+pos2)/2f
 
                     scale = curTfLength / tfLength!! * prevScale
-                    angle = abs(getAngle(tfVector!!, curTfVector)) + prevAngle
+
+                    // To determine to which side your fingers rotate
+                    val sign = if (tfVector!!.y*curTfVector.x - tfVector!!.x*curTfVector.y > 0) -1f else 1f
+
+                    angle = prevAngle + sign*getAngle(tfVector!!, curTfVector)
+
                     rotationCenter = curTfMid
                     offset = curTfMid - tfMid!! + prevOffset
 
@@ -206,7 +219,7 @@ class PlotView(
 
                 if (secondFingerId == null) {
                     pressPosition?.let {
-                        offset = (pos1 - it + prevOffset).rotate(angle)
+                        offset = pos1 - it + prevOffset
                         Log.i(TAG, "offset no rotation: ${(pos1 - it) + prevOffset}")
                         Log.i(TAG, "offset with rotation: $offset")
 
@@ -249,13 +262,8 @@ class PlotView(
 }
 
 
-fun getAngle(v1: PointF, v2: PointF): Float {
-    val cosine = (v1.x*v2.x + v1.y*v2.y) / (v1.length() * v2.length())
-
-    val sign = if (v2.x - v1.x/v1.y*v2.y > 0) -1f else 1f
-
-    return sign * acos(cosine) * 180f / PI.toFloat()
-}
+fun getAngle(v1: PointF, v2: PointF) =
+    acos((v1.x*v2.x + v1.y*v2.y) / (v1.length() * v2.length())) * 180f / PI.toFloat()
 
 operator fun PointF.minus(other: PointF): PointF {
     return PointF(this.x-other.x, this.y-other.y)
@@ -266,6 +274,18 @@ operator fun PointF.plus(other: PointF): PointF {
 operator fun PointF.div(num: Float): PointF {
     return PointF(this.x/num, this.y/num)
 }
+
+operator fun PointF.timesAssign(num: Float) {
+    this.x *= num
+    this.y *= num
+}
+
+operator fun PointF.times(num: Float): PointF {
+    this.x *= num
+    this.y *= num
+    return this
+}
+
 
 fun PointF.rotate(angle: Float): PointF {
     val point = PointF()
